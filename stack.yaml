@@ -10,4 +10,5 @@ extra-deps:
 - aeson-0.10.0.0
 - attoparsec-0.13.0.1
 - bloodhound-0.10.0.0
+- data-default-generics-0.3
 resolver: lts-3.18
