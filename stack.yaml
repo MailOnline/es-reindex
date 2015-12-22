@@ -2,6 +2,10 @@ flags: {}
 extra-package-dbs: []
 packages:
 - '.'
+- location:
+    git: git@github.com:bos/aeson
+    commit: 4de5a203eeeea593457bc92bc40062f3ea830426 # master
+  extra-dep: true
 extra-deps:
 - aeson-0.10.0.0
 - attoparsec-0.13.0.1
