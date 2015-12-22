@@ -25,6 +25,7 @@ data Options = Options
   , destinationMapping :: Maybe MappingName
   , frameSize          :: Maybe Size
   , scrollTime         :: Maybe NominalDiffTime
+  , filter_            :: Maybe Input
   } deriving (Show, Eq)
 
 parser :: Parser Options
@@ -36,13 +37,22 @@ parser = Options
   <*> optional (MappingName <$> argText "destination-mapping" empty)
   <*> optional (Size <$> optInt "framesize" 'n' empty)
   <*> optional (fromIntegral <$> optInt "scroll" 't' "Time to keep scroll open between scans")
+  <*> optional ((\x -> if x == "-" then Stdin else File x)
+                  <$> optText "filter" 'f' "Specify filepath or - for STDIN")
 
 main :: IO ()
 main = do
   opts <- options "Re-index Elasticsearch documents using scan-and-scroll API" parser
   manager <- newManager defaultManagerSettings
+  filtStr <- case filter_ opts of
+               Nothing -> return Nothing
+               Just Stdin -> Just . fromString . ltextToString <$> getContents
+               Just (File p) -> Just . encodeUtf8 <$> readFile (textToString p)
   let bhenv = BHEnv (fromMaybe (Server "http://127.0.0.1:9200") (server opts)) manager
-      search = def { size = fromMaybe (Size 100) (frameSize opts) }
+      filt = case decodeStrict' <$> filtStr of
+               Just Nothing -> error "Failed to parse filter JSON"
+               x -> join x
+      search = def { size = fromMaybe (Size 100) (frameSize opts), filterBody = filt }
   msId <- runBH bhenv $ getInitialScroll (sourceIndex opts) (sourceMapping opts) search
   case msId of
     Nothing -> putStrLn "No documents to scan"
@@ -76,6 +86,10 @@ runBH' :: MonadReader BHEnv m => BH m a -> m a
 runBH' f = do
   e <- ask
   runBH e f
+
+data Input = File Text
+           | Stdin
+  deriving (Show, Eq)
 
 instance Default Search
 instance Default From where
