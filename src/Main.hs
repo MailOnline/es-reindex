@@ -15,6 +15,7 @@ import Data.Default.Generics
 import Data.Time
 import Database.Bloodhound
 import Network.HTTP.Client
+import Network.HTTP.Types
 import Turtle.Options
 
 data Options = Options
@@ -63,9 +64,16 @@ main = do
                                     (fromMaybe (sourceMapping opts) (destinationMapping opts))
                                     i s)
        =$ conduitVector 1000
-       =$ mapMC (runBH' . bulk)
-       =$ mapC responseStatus
-       $$ printC
+       =$ mapMC bulk'
+       $$ sinkNull
+
+bulk' :: (MonadIO m, MonadReader BHEnv m) => Vector BulkOperation -> m ()
+bulk' v = do
+  putStr $ "Indexing " <> show (length v) <> " documents.. "
+  r <- runBH' $ bulk v
+  let s = responseStatus r
+      msg = show (statusCode s) <> " " <> decodeUtf8 (statusMessage s)
+  putStrLn msg
 
 advanceScrollSource :: (MonadIO m, MonadThrow m, MonadReader BHEnv m)
                     => ScrollId -> NominalDiffTime -> Conduit.Source m (DocId, Value)
@@ -74,10 +82,12 @@ advanceScrollSource sId t = do
   case r of
     Left er -> liftIO $ print er
     Right srch -> do
-      yieldMany $ getSearchDocs srch
-      case scrollId srch of
-        Nothing -> return ()
-        Just sId' -> advanceScrollSource sId' t
+      let searchDocs = getSearchDocs srch
+      yieldMany searchDocs
+      case (length searchDocs, scrollId srch) of
+        (0, _)         -> return ()
+        (_, Nothing)   -> return ()
+        (_, Just sId') -> advanceScrollSource sId' t
 
 getSearchDocs :: SearchResult a -> [(DocId, a)]
 getSearchDocs = mapMaybe (\h -> (,) <$> pure (hitDocId h) <*> hitSource h) . hits . searchHits

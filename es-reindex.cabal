@@ -24,6 +24,7 @@ executable es-reindex
                      , conduit-combinators
                      , data-default-generics
                      , http-client
+                     , http-types
                      , mtl
                      , time
                      , turtle
