@@ -9,7 +9,6 @@ module Main where
 import BasicPrelude          hiding (empty)
 import Conduit
 import Control.Applicative
-import Control.Monad.Reader
 import Data.Aeson
 import Data.Default.Generics
 import Data.Time
@@ -19,11 +18,12 @@ import Network.HTTP.Types
 import Turtle.Options
 
 data Options = Options
-  { server             :: Maybe Server
+  { sourceServer       :: Maybe Server
   , sourceIndex        :: IndexName
   , sourceMapping      :: MappingName
   , destinationIndex   :: IndexName
   , destinationMapping :: Maybe MappingName
+  , destinationServer  :: Maybe Server
   , frameSize          :: Maybe Size
   , scrollTime         :: Maybe NominalDiffTime
   , filter_            :: Maybe Input
@@ -31,11 +31,12 @@ data Options = Options
 
 parser :: Parser Options
 parser = Options
-  <$> optional (Server <$> optText "server" 's' empty)
+  <$> optional (Server <$> optText "source-server" 's' empty)
   <*> (IndexName <$> argText "source-index" empty)
   <*> (MappingName <$> argText "source-mapping" empty)
   <*> (IndexName <$> argText "destination-index" empty)
   <*> optional (MappingName <$> argText "destination-mapping" empty)
+  <*> optional (Server <$> optText "destination-server" 'd' empty)
   <*> optional (Size <$> optInt "framesize" 'n' empty)
   <*> optional (fromIntegral <$> optInt "scroll" 't' "Time to keep scroll open between scans")
   <*> optional ((\x -> if x == "-" then Stdin else File x)
@@ -49,36 +50,41 @@ main = do
                Nothing -> return Nothing
                Just Stdin -> Just . fromString . ltextToString <$> getContents
                Just (File p) -> Just . encodeUtf8 <$> readFile (textToString p)
-  let bhenv = BHEnv (fromMaybe (Server "http://127.0.0.1:9200") (server opts)) manager
+  let mkBH s = BHEnv (fromMaybe (Server "http://127.0.0.1:9200") s) manager
+      sourceBH = mkBH $ sourceServer opts
+      destBH = mkBH $ destinationServer opts
       filt = case decodeStrict' <$> filtStr of
                Just Nothing -> error "Failed to parse filter JSON"
                x -> join x
       search = def { size = fromMaybe (Size 100) (frameSize opts), filterBody = filt }
-  msId <- runBH bhenv $ getInitialScroll (sourceIndex opts) (sourceMapping opts) search
+  msId <- runBH sourceBH $ getInitialScroll (sourceIndex opts) (sourceMapping opts) search
   case msId of
     Nothing -> putStrLn "No documents to scan"
     Just sId ->
-      runConduit $ runReaderC bhenv $
-          advanceScrollSource sId (fromMaybe 60 $ scrollTime opts)
+      runConduit $
+      advanceScrollSource sourceBH sId (fromMaybe 60 $ scrollTime opts)
        =$ mapC (\(i,s) -> BulkIndex (destinationIndex opts)
                                     (fromMaybe (sourceMapping opts) (destinationMapping opts))
                                     i s)
        =$ conduitVector 1000
-       =$ mapMC bulk'
+       =$ mapMC (bulk' destBH)
        $$ sinkNull
 
-bulk' :: (MonadIO m, MonadReader BHEnv m) => Vector BulkOperation -> m ()
-bulk' v = do
+bulk' :: (MonadIO m) => BHEnv -> Vector BulkOperation -> m ()
+bulk' env v = do
   putStr $ "Indexing " <> show (length v) <> " documents.. "
-  r <- runBH' $ bulk v
+  r <- runBH env $ bulk v
   let s = responseStatus r
       msg = show (statusCode s) <> " " <> decodeUtf8 (statusMessage s)
   putStrLn msg
 
-advanceScrollSource :: (MonadIO m, MonadThrow m, MonadReader BHEnv m)
-                    => ScrollId -> NominalDiffTime -> Conduit.Source m (DocId, Value)
-advanceScrollSource sId t = do
-  r <- runBH' $ advanceScroll sId t
+advanceScrollSource :: (MonadIO m, MonadThrow m)
+                    => BHEnv
+                    -> ScrollId
+                    -> NominalDiffTime
+                    -> Conduit.Source m (DocId, Value)
+advanceScrollSource env sId t = do
+  r <- runBH env $ advanceScroll sId t
   case r of
     Left er -> liftIO $ print er
     Right srch -> do
@@ -87,15 +93,10 @@ advanceScrollSource sId t = do
       case (length searchDocs, scrollId srch) of
         (0, _)         -> return ()
         (_, Nothing)   -> return ()
-        (_, Just sId') -> advanceScrollSource sId' t
+        (_, Just sId') -> advanceScrollSource env sId' t
 
 getSearchDocs :: SearchResult a -> [(DocId, a)]
 getSearchDocs = mapMaybe (\h -> (,) <$> pure (hitDocId h) <*> hitSource h) . hits . searchHits
-
-runBH' :: MonadReader BHEnv m => BH m a -> m a
-runBH' f = do
-  e <- ask
-  runBH e f
 
 data Input = File Text
            | Stdin
