@@ -56,7 +56,9 @@ main = do
       filt = case decodeStrict' <$> filtStr of
                Just Nothing -> error "Failed to parse filter JSON"
                x -> join x
-      search = def { size = fromMaybe (Size 100) (frameSize opts), filterBody = filt }
+      searchSize@(Size sizeN) = fromMaybe (Size 100) (frameSize opts)
+      search = def { size = searchSize, filterBody = filt }
+      bulkSize' = fromMaybe 78643200 $ bulkSize opts
   msId <- runBH sourceBH $ getInitialScroll (sourceIndex opts) (sourceMapping opts) search
   case msId of
     Nothing -> putStrLn "No documents to scan"
@@ -66,7 +68,7 @@ main = do
        =$ mapC (\(i,s) -> BulkIndex (destinationIndex opts)
                                     (fromMaybe (sourceMapping opts) (destinationMapping opts))
                                     i s)
-       =$ conduitVector 1000
+       =$ conduitVector sizeN
        =$ mapMC (bulk' destBH)
        $$ sinkNull
 
