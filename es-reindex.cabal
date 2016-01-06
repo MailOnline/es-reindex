@@ -21,6 +21,7 @@ executable es-reindex
                      , aeson
                      , basic-prelude
                      , bloodhound >= 0.10
+                     , bytestring
                      , conduit-combinators
                      , data-default-generics
                      , http-client
@@ -28,3 +29,4 @@ executable es-reindex
                      , mtl
                      , time
                      , turtle
+                     , vector

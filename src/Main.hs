@@ -12,10 +12,13 @@ import Control.Applicative
 import Data.Aeson
 import Data.Default.Generics
 import Data.Time
-import Database.Bloodhound
+import Database.Bloodhound   hiding (source)
 import Network.HTTP.Client
 import Network.HTTP.Types
 import Turtle.Options
+
+import qualified Data.ByteString.Lazy as B
+import qualified Data.Vector as V
 
 data Options = Options
   { sourceServer       :: Maybe Server
@@ -24,7 +27,8 @@ data Options = Options
   , destinationIndex   :: IndexName
   , destinationMapping :: Maybe MappingName
   , destinationServer  :: Maybe Server
-  , frameSize          :: Maybe Size
+  , frameLength        :: Maybe Size
+  , bulkSize           :: Maybe Int64
   , scrollTime         :: Maybe NominalDiffTime
   , filter_            :: Maybe Input
   } deriving (Show, Eq)
@@ -37,7 +41,9 @@ parser = Options
   <*> (IndexName <$> argText "destination-index" empty)
   <*> optional (MappingName <$> argText "destination-mapping" empty)
   <*> optional (Server <$> optText "destination-server" 'd' empty)
-  <*> optional (Size <$> optInt "framesize" 'n' empty)
+  <*> optional (Size <$> optInt "framelength" 'l' empty)
+  <*> optional (fromIntegral <$> optInt "bulksize" 'b'
+                "Maximum total byte size of documents per one indexing request")
   <*> optional (fromIntegral <$> optInt "scroll" 't' "Time to keep scroll open between scans")
   <*> optional ((\x -> if x == "-" then Stdin else File x)
                   <$> optText "filter" 'f' "Specify filepath or - for STDIN")
@@ -56,8 +62,8 @@ main = do
       filt = case decodeStrict' <$> filtStr of
                Just Nothing -> error "Failed to parse filter JSON"
                x -> join x
-      searchSize@(Size sizeN) = fromMaybe (Size 100) (frameSize opts)
-      search = def { size = searchSize, filterBody = filt }
+      searchLength@(Size lengthN) = fromMaybe (Size 100) (frameLength opts)
+      search = def { size = searchLength, filterBody = filt }
       bulkSize' = fromMaybe 78643200 $ bulkSize opts
   msId <- runBH sourceBH $ getInitialScroll (sourceIndex opts) (sourceMapping opts) search
   case msId of
@@ -65,12 +71,18 @@ main = do
     Just sId ->
       runConduit $
       advanceScrollSource sourceBH sId (fromMaybe 60 $ scrollTime opts)
-       =$ mapC (\(i,s) -> BulkIndex (destinationIndex opts)
-                                    (fromMaybe (sourceMapping opts) (destinationMapping opts))
-                                    i s)
-       =$ conduitVector sizeN
+       =$ conduitVector lengthN
+       =$ concatMapC (snd . splitByAccumResult docSize bulkSize')
+       =$ mapC (V.map $ \(i,s) -> BulkIndex
+                                  (destinationIndex opts)
+                                  (fromMaybe (sourceMapping opts) (destinationMapping opts))
+                                  i s)
        =$ mapMC (bulk' destBH)
        $$ sinkNull
+
+
+docSize :: ToJSON a => (t, a) -> Int64
+docSize (_, v) = B.length $ encode v
 
 bulk' :: (MonadIO m) => BHEnv -> Vector BulkOperation -> m ()
 bulk' env v = do
@@ -111,3 +123,28 @@ instance Default Size where
   def = Size 10
 instance Default SearchType where
   def = SearchTypeQueryThenFetch
+
+-- | Split a vector into size-constrained sub-vectors. Separate
+-- elements that do not fit under limit.
+splitByAccumResult :: (Num r, Ord r)
+                   => (a -> r)
+                   -- ^ Calculate element size.
+                   -> r
+                   -- ^ Maximum total size of elements in a chunk.
+                   -> Vector a
+                   -> ([a], [Vector a])
+splitByAccumResult f maxSize v =
+  go 0 0 [] [] v
+  where
+    go i acc fatties chunks source
+      | V.null source = (fatties, chunks)
+      | i == V.length source = (fatties, source:chunks)
+      | otherwise =
+          if newAcc >= maxSize
+          then
+            if i == 0
+            then go 0 0 ((V.head source):fatties) chunks $ V.tail source
+            else go 0 0 fatties ((V.slice 0 i source):chunks) $ V.drop i source
+          else go (i + 1) newAcc fatties chunks source
+          where
+            newAcc = acc + (f $ source V.! i)
