@@ -30,6 +30,7 @@ data Options = Options
   , frameLength        :: Maybe Size
   , bulkSize           :: Maybe Int64
   , scrollTime         :: Maybe NominalDiffTime
+  , scrollOldId        :: Maybe ScrollId
   , filter_            :: Maybe Input
   } deriving (Show, Eq)
 
@@ -45,6 +46,7 @@ parser = Options
   <*> optional (fromIntegral <$> optInt "bulksize" 'b'
                 "Maximum total byte size of documents per one indexing request")
   <*> optional (fromIntegral <$> optInt "scroll" 't' "Time to keep scroll open between scans")
+  <*> optional (ScrollId <$> optText "scrollid" 'i' "Open scroll id to start indexing from")
   <*> optional ((\x -> if x == "-" then Stdin else File x)
                   <$> optText "filter" 'f' "Specify filepath or - for STDIN")
 
@@ -65,20 +67,23 @@ main = do
       searchLength@(Size lengthN) = fromMaybe (Size 100) (frameLength opts)
       search = def { size = searchLength, filterBody = filt }
       bulkSize' = fromMaybe 78643200 $ bulkSize opts
-  msId <- runBH sourceBH $ getInitialScroll (sourceIndex opts) (sourceMapping opts) search
+      getScroll = runBH sourceBH $
+        getInitialScroll (sourceIndex opts) (sourceMapping opts) search
+  msId <- maybe getScroll (return . Just) (scrollOldId opts)
   case msId of
     Nothing -> putStrLn "No documents to scan"
-    Just sId ->
+    Just sId@(ScrollId rawId) -> do
+      putStrLn $ "Scroll ID is " <> rawId
       runConduit $
-      advanceScrollSource sourceBH sId (fromMaybe 60 $ scrollTime opts)
-       =$ conduitVector lengthN
-       =$ concatMapC (snd . splitByAccumResult docSize bulkSize')
-       =$ mapC (V.map $ \(i,s) -> BulkIndex
-                                  (destinationIndex opts)
-                                  (fromMaybe (sourceMapping opts) (destinationMapping opts))
-                                  i s)
-       =$ mapMC (bulk' destBH)
-       $$ sinkNull
+        advanceScrollSource sourceBH sId (fromMaybe 60 $ scrollTime opts)
+        =$ conduitVector lengthN
+        =$ concatMapC (snd . splitByAccumResult docSize bulkSize')
+        =$ mapC (V.map $ \(i,s) -> BulkIndex
+                                   (destinationIndex opts)
+                                   (fromMaybe (sourceMapping opts) (destinationMapping opts))
+                                   i s)
+        =$ mapMC (bulk' destBH)
+        $$ sinkNull
 
 
 docSize :: ToJSON a => (t, a) -> Int64
