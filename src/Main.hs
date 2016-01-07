@@ -45,7 +45,7 @@ parser = Options
   <*> optional (Size <$> optInt "framelength" 'l' empty)
   <*> optional (fromIntegral <$> optInt "bulksize" 'b'
                 "Maximum total byte size of documents per one indexing request")
-  <*> optional (fromIntegral <$> optInt "scroll" 't' "Time to keep scroll open between scans")
+  <*> optional (fromIntegral <$> optInt "scrollttl" 't' "Time to keep scroll open between scans")
   <*> optional (ScrollId <$> optText "scrollid" 'i' "Open scroll id to start indexing from")
   <*> optional ((\x -> if x == "-" then Stdin else File x)
                   <$> optText "filter" 'f' "Specify filepath or - for STDIN")
