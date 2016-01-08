@@ -1,0 +1,41 @@
+sudo: false
+language: c
+
+addons:
+  apt:
+    packages:
+    - libgmp-dev
+    - ca-certificates
+
+before_install:
+- export GIT_TAG=$(git describe --tags --exact-match || true)
+- export PATH=${PATH//:\.\/node_modules\/\.bin/}
+- env
+- mkdir -p ~/.local/bin
+- export PATH=$HOME/.local/bin:$PATH
+- travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards
+  --strip-components=1 -C ~/.local/bin '*/stack'
+- stack setup
+
+install:
+- stack build
+
+script:
+- stack test
+
+cache:
+  directories:
+  - $HOME/.stack
+  - $TRAVIS_BUILD_DIR/.stack-work
+
+before_deploy:
+- export APP_BINARY=$(stack path --local-install-root)/bin/es-reindex
+
+deploy:
+  provider: releases
+  api_key:
+    secure: n81psldGf+RchA62l5rZwUwwotwluEFgOOeaEv1OEaB5fZrEhFbOjVj6UiMFjzNMEjF8qmV6TbSN7/y/wLvZfn0EYK8uC077/65Bfan3D9aDXpFtEtlEfaU04VoNyy8bkwa55IOtypTPShlh2+kVb7R3XlPzBqeTrD5QU4artyKK3HuPFk3JFQ/PISOhFTtdFv4Xhh+fnupHI3JAvz33lkmPb30Sfb7HGrMebNX31FsiTmsQrp0k8OUQSbyP80oGwklSxyHKuE945buFykUN0zbLqHdzPSm/trXnXeXI4royO4ACnHmYWmN8iwrqtfPBjBxDqb25c7ShNusafHBZFwFKNfbmbrUOHbMTkjAd9NJgea2zyLWbdBnt8rX9Oefq5WdSBCxuQhAUyZIOdADdSgFC+iFsTiUTJKbNNJfAFfnd3P0UcUUBw320e43B+9KNFlW5s2Z6HtJyi5SfTlTLkrz/R/ZiI6L7dN4/ucvF3Qr9pEd2vEZSwi7G+zJiBonLoS+LIswnQH3lcjGE8+xy4Gty+s5uZsBfV32Ne2kxx9D5C/1W7lBM9aqfNsJ55g50sXq8ykZ6bNyfBZLp921IwTgQ45RfYjvklfby+kOuUm6kG7WgHc1UobhNRKZXPTLbZ8LzVAhqdw9Ld4T2J4rLnmE8C/5ZbhoUrDBEnas8zUI=
+  file: $APP_BINARY
+  skip_cleanup: true
+  on:
+    tags: true
