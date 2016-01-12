@@ -27,6 +27,7 @@ executable es-reindex
                      , http-client
                      , http-types
                      , mtl
+                     , text
                      , time
                      , turtle
                      , vector

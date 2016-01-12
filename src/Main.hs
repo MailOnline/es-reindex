@@ -18,6 +18,7 @@ import Network.HTTP.Types
 import Turtle.Options
 
 import qualified Data.ByteString.Lazy as B
+import qualified Data.Text.Lazy as LT
 import qualified Data.Vector as V
 
 data Options = Options
@@ -56,14 +57,12 @@ main = do
   manager <- newManager defaultManagerSettings
   filtStr <- case filter_ opts of
                Nothing -> return Nothing
-               Just Stdin -> Just . fromString . ltextToString <$> getContents
-               Just (File p) -> Just . encodeUtf8 <$> readFile (textToString p)
-  let mkBH s = BHEnv (fromMaybe (Server "http://127.0.0.1:9200") s) manager
+               Just Stdin -> Just . LT.toStrict <$> getContents
+               Just (File p) -> Just <$> readFile (textToString p)
+  let mkBH s = mkBHEnv (fromMaybe (Server "http://127.0.0.1:9200") s) manager
       sourceBH = mkBH $ sourceServer opts
       destBH = mkBH $ destinationServer opts
-      filt = case decodeStrict' <$> filtStr of
-               Just Nothing -> error "Failed to parse filter JSON"
-               x -> join x
+      filt = read <$> filtStr
       searchLength@(Size lengthN) = fromMaybe (Size 100) (frameLength opts)
       search = def { size = searchLength, filterBody = filt }
       bulkSize' = fromMaybe 78643200 $ bulkSize opts
