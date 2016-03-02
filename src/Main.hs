@@ -77,10 +77,9 @@ main = do
         advanceScrollSource sourceBH sId (fromMaybe 60 $ scrollTime opts)
         =$ conduitVector lengthN
         =$ concatMapC (snd . splitByAccumResult docSize bulkSize')
-        =$ mapC (V.map $ \(i,s) -> BulkIndex
+        =$ mapC (V.map $ uncurry $ BulkIndex
                                    (destinationIndex opts)
-                                   (fromMaybe (sourceMapping opts) (destinationMapping opts))
-                                   i s)
+                                   (fromMaybe (sourceMapping opts) (destinationMapping opts)))
         =$ mapMC (bulk' destBH)
         $$ sinkNull
 
@@ -137,8 +136,8 @@ splitByAccumResult :: (Num r, Ord r)
                    -- ^ Maximum total size of elements in a chunk.
                    -> Vector a
                    -> ([a], [Vector a])
-splitByAccumResult f maxSize v =
-  go 0 0 [] [] v
+splitByAccumResult f maxSize =
+  go 0 0 [] []
   where
     go i acc fatties chunks source
       | V.null source = (fatties, chunks)
@@ -147,8 +146,8 @@ splitByAccumResult f maxSize v =
           if newAcc >= maxSize
           then
             if i == 0
-            then go 0 0 ((V.head source):fatties) chunks $ V.tail source
-            else go 0 0 fatties ((V.slice 0 i source):chunks) $ V.drop i source
+            then go 0 0 (V.head source : fatties) chunks $ V.tail source
+            else go 0 0 fatties (V.slice 0 i source : chunks) $ V.drop i source
           else go (i + 1) newAcc fatties chunks source
           where
-            newAcc = acc + (f $ source V.! i)
+            newAcc = acc + f (source V.! i)
