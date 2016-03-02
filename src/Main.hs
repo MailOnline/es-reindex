@@ -6,6 +6,8 @@
 
 module Main where
 
+import Util
+
 import BasicPrelude          hiding (empty)
 import Conduit
 import Control.Applicative
@@ -75,8 +77,7 @@ main = do
       putStrLn $ "Scroll ID is " <> rawId
       runConduit $
         advanceScrollSource sourceBH sId (fromMaybe 60 $ scrollTime opts)
-        =$ conduitVector lengthN
-        =$ concatMapC (snd . splitByAccumResult docSize bulkSize')
+        =$ conduitVectorBounded docSize bulkSize' lengthN
         =$ mapC (V.map $ uncurry $ BulkIndex
                                    (destinationIndex opts)
                                    (fromMaybe (sourceMapping opts) (destinationMapping opts)))
@@ -126,28 +127,3 @@ instance Default Size where
   def = Size 10
 instance Default SearchType where
   def = SearchTypeQueryThenFetch
-
--- | Split a vector into size-constrained sub-vectors. Separate
--- elements that do not fit under limit.
-splitByAccumResult :: (Num r, Ord r)
-                   => (a -> r)
-                   -- ^ Calculate element size.
-                   -> r
-                   -- ^ Maximum total size of elements in a chunk.
-                   -> Vector a
-                   -> ([a], [Vector a])
-splitByAccumResult f maxSize =
-  go 0 0 [] []
-  where
-    go i acc fatties chunks source
-      | V.null source = (fatties, chunks)
-      | i == V.length source = (fatties, source:chunks)
-      | otherwise =
-          if newAcc >= maxSize
-          then
-            if i == 0
-            then go 0 0 (V.head source : fatties) chunks $ V.tail source
-            else go 0 0 fatties (V.slice 0 i source : chunks) $ V.drop i source
-          else go (i + 1) newAcc fatties chunks source
-          where
-            newAcc = acc + f (source V.! i)

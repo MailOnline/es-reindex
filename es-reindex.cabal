@@ -27,6 +27,7 @@ executable es-reindex
                      , http-client
                      , http-types
                      , mtl
+                     , primitive
                      , text
                      , time
                      , turtle
