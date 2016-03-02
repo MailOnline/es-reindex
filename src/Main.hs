@@ -22,11 +22,11 @@ import qualified Data.Text.Lazy as LT
 import qualified Data.Vector as V
 
 data Options = Options
-  { sourceServer       :: Maybe Server
-  , sourceIndex        :: IndexName
+  { sourceIndex        :: IndexName
   , sourceMapping      :: MappingName
   , destinationIndex   :: IndexName
   , destinationMapping :: Maybe MappingName
+  , sourceServer       :: Maybe Server
   , destinationServer  :: Maybe Server
   , frameLength        :: Maybe Size
   , bulkSize           :: Maybe Int64
@@ -37,11 +37,11 @@ data Options = Options
 
 parser :: Parser Options
 parser = Options
-  <$> optional (Server <$> optText "source-server" 's' empty)
-  <*> (IndexName <$> argText "source-index" empty)
+  <$> (IndexName <$> argText "source-index" empty)
   <*> (MappingName <$> argText "source-mapping" empty)
   <*> (IndexName <$> argText "destination-index" empty)
   <*> optional (MappingName <$> argText "destination-mapping" empty)
+  <*> optional (Server <$> optText "source-server" 's' empty)
   <*> optional (Server <$> optText "destination-server" 'd' empty)
   <*> optional (Size <$> optInt "framelength" 'l' empty)
   <*> optional (fromIntegral <$> optInt "bulksize" 'b'
