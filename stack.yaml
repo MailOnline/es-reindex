@@ -3,16 +3,9 @@ extra-package-dbs: []
 packages:
 - '.'
 - location:
-    git: https://github.com/bos/aeson
-    commit: 4de5a203eeeea593457bc92bc40062f3ea830426 # master
-  extra-dep: true
-- location:
     git: https://github.com/MailOnline/bloodhound
-    commit: 0265202ff3a94b2384880a9ee02fbd38708e557a
+    commit: 7c72e75291a92536d311ca1726d3684ae51a6d46
   extra-dep: true
 extra-deps:
-- aeson-0.10.0.0
-- attoparsec-0.13.0.1
-- bloodhound-0.10.0.1
 - data-default-generics-0.3
-resolver: lts-3.18
+resolver: lts-6.0
