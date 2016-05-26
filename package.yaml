@@ -1,0 +1,31 @@
+---
+name: es-reindex
+version: "0.4"
+copyright: "2015-2016 DMGT"
+license: BSD3
+
+github: MailOnline/es-reindex
+
+ghc-options: -Wall
+dependencies:
+  - aeson
+  - base >= 4.7 && < 5
+  - basic-prelude
+  - bloodhound >= 0.11
+  - bytestring
+  - conduit-combinators
+  - data-default-generics
+  - http-client
+  - http-types
+  - mtl
+  - primitive
+  - text
+  - time
+  - turtle
+
+executables:
+  es-reindex:
+    main: Main.hs
+    source-dirs: src
+    dependencies:
+      - vector
