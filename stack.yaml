@@ -4,7 +4,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/MailOnline/bloodhound
-    commit: 7c72e75291a92536d311ca1726d3684ae51a6d46
+    commit: a3ae646f4c8eaf70885b65db1f8e7d0858382b25
   extra-dep: true
 extra-deps:
 - data-default-generics-0.3
